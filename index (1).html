@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HealthBot — Overdue Appointment Reminder Bot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f0f2f5;
+      --surface: #ffffff;
+      --surface2: #f7f8fa;
+      --border: rgba(0,0,0,0.10);
+      --border-strong: rgba(0,0,0,0.18);
+      --text: #111;
+      --text2: #555;
+      --text3: #999;
+      --green: #1D9E75;
+      --green-dark: #0F6E56;
+      --green-light: #E1F5EE;
+      --red: #A32D2D;
+      --red-light: #FCEBEB;
+      --amber: #854F0B;
+      --amber-light: #FAEEDA;
+      --purple: #3C3489;
+      --purple-light: #EEEDFE;
+      --gray-light: #F1EFE8;
+      --gray-mid: #5F5E5A;
+      --radius: 10px;
+      --radius-sm: 6px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1117;
+        --surface: #1a1d24;
+        --surface2: #13151b;
+        --border: rgba(255,255,255,0.08);
+        --border-strong: rgba(255,255,255,0.15);
+        --text: #f0f0f0;
+        --text2: #aaa;
+        --text3: #666;
+        --green-light: #0a2e22;
+        --red-light: #2e0d0d;
+        --amber-light: #2e1e07;
+        --purple-light: #1a1640;
+        --gray-light: #1e1e1c;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top nav ── */
+    nav {
+      background: var(--surface);
+      border-bottom: 0.5px solid var(--border);
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 15px; font-weight: 600; color: var(--text);
+      text-decoration: none;
+    }
+    .nav-logo {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: var(--green);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .nav-logo svg { width: 18px; height: 18px; }
+    .nav-tag {
+      font-size: 11px; padding: 2px 8px;
+      background: var(--amber-light); color: var(--amber);
+      border-radius: 20px; font-weight: 500;
+    }
+
+    /* ── Main layout ── */
+    .page {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 16px;
+      gap: 20px;
+    }
+
+    .intro {
+      max-width: 680px;
+      width: 100%;
+      text-align: center;
+    }
+    .intro h1 { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
+    .intro p { font-size: 14px; color: var(--text2); line-height: 1.6; }
+
+    /* ── Flow diagram ── */
+    .flow-bar {
+      max-width: 680px; width: 100%;
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      overflow-x: auto;
+      flex-shrink: 0;
+    }
+    .flow-step {
+      display: flex; align-items: center; gap: 8px;
+      flex-shrink: 0;
+    }
+    .flow-pill {
+      font-size: 11px; font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 0.5px solid var(--border);
+      background: var(--surface2);
+      color: var(--text2);
+      white-space: nowrap;
+    }
+    .flow-pill.active { background: var(--green-light); color: var(--green-dark); border-color: var(--green); }
+    .flow-pill.danger { background: var(--red-light); color: var(--red); }
+    .flow-pill.warn { background: var(--amber-light); color: var(--amber); }
+    .flow-arrow { color: var(--text3); font-size: 14px; padding: 0 4px; flex-shrink: 0; }
+
+    /* ── App shell ── */
+    .app-shell {
+      max-width: 860px;
+      width: 100%;
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      height: 580px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.07);
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      border-right: 0.5px solid var(--border);
+      background: var(--surface2);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-header {
+      padding: 14px 16px;
+      border-bottom: 0.5px solid var(--border);
+      font-size: 12px; font-weight: 600;
+      color: var(--text2);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .patient-list { overflow-y: auto; flex: 1; }
+    .patient-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 0.5px solid var(--border);
+      transition: background 0.1s;
+      border-left: 2px solid transparent;
+    }
+    .patient-item:hover { background: var(--surface); }
+    .patient-item.active { background: var(--surface); border-left-color: var(--green); }
+    .patient-name { font-size: 13px; font-weight: 500; color: var(--text); }
+    .patient-meta { font-size: 11px; color: var(--text2); margin-top: 2px; }
+    .status-badge {
+      display: inline-block; font-size: 10px; padding: 2px 7px;
+      border-radius: 20px; margin-top: 5px; font-weight: 500;
+    }
+    .badge-pending { background: var(--amber-light); color: var(--amber); }
+    .badge-escalated { background: var(--red-light); color: var(--red); }
+    .badge-scheduled { background: var(--green-light); color: var(--green-dark); }
+    .badge-timeout { background: var(--gray-light); color: var(--gray-mid); }
+
+    /* ── Chat area ── */
+    .chat-area { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+    .chat-header {
+      padding: 12px 16px;
+      border-bottom: 0.5px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+      background: var(--surface);
+    }
+    .chat-header-info { display: flex; align-items: center; gap: 10px; }
+    .avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: #9FE1CB; color: #085041;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 600; flex-shrink: 0;
+    }
+    .chat-name { font-size: 14px; font-weight: 500; }
+    .chat-sub { font-size: 11px; color: var(--text2); }
+    .header-actions { display: flex; gap: 6px; }
+    .action-btn {
+      font-size: 11px; padding: 5px 11px;
+      border: 0.5px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      background: transparent; cursor: pointer;
+      color: var(--text2); font-family: inherit;
+      transition: background 0.1s;
+    }
+    .action-btn:hover { background: var(--surface2); }
+    .action-btn.danger { border-color: #E24B4A; color: var(--red); }
+    .action-btn.danger:hover { background: var(--red-light); }
+    .action-btn.success { border-color: var(--green); color: var(--green-dark); }
+    .action-btn.success:hover { background: var(--green-light); }
+
+    .escalated-banner {
+      margin: 10px 14px 0;
+      padding: 8px 12px;
+      background: var(--red-light);
+      border: 0.5px solid #F09595;
+      border-radius: var(--radius-sm);
+      font-size: 12px; color: var(--red);
+      display: none; align-items: center; gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .messages {
+      flex: 1; overflow-y: auto;
+      padding: 16px;
+      display: flex; flex-direction: column; gap: 8px;
+      background: var(--bg);
+    }
+
+    .msg {
+      max-width: 74%;
+      padding: 8px 12px;
+      border-radius: 14px;
+      font-size: 13px; line-height: 1.55;
+      animation: fadeUp 0.18s ease;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(5px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .msg-bot {
+      align-self: flex-start;
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      color: var(--text);
+      border-bottom-left-radius: 3px;
+    }
+    .msg-patient {
+      align-self: flex-end;
+      background: var(--green);
+      color: #fff;
+      border-bottom-right-radius: 3px;
+    }
+    .msg-system {
+      align-self: center;
+      background: transparent;
+      color: var(--text3);
+      font-size: 11px; text-align: center;
+      max-width: 90%; padding: 2px 0;
+    }
+    .msg-label { font-size: 10px; font-weight: 600; color: var(--text3); margin-bottom: 3px; }
+    .msg-time { font-size: 10px; opacity: 0.55; margin-top: 3px; text-align: right; }
+
+    .typing-indicator {
+      align-self: flex-start;
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 14px; border-bottom-left-radius: 3px;
+      padding: 10px 14px;
+      display: flex; gap: 4px; align-items: center;
+    }
+    .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--text3);
+      animation: bounce 1.2s infinite;
+    }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+
+    .quick-replies {
+      padding: 8px 14px;
+      display: flex; gap: 6px; flex-wrap: wrap;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-top: 0.5px solid var(--border);
+    }
+    .quick-reply {
+      font-size: 11px; padding: 4px 11px;
+      border: 0.5px solid var(--green);
+      border-radius: 20px;
+      background: transparent; color: var(--green-dark);
+      cursor: pointer; font-family: inherit;
+      transition: background 0.1s;
+    }
+    .quick-reply:hover { background: var(--green-light); }
+
+    .input-area {
+      padding: 10px 14px;
+      border-top: 0.5px solid var(--border);
+      display: flex; gap: 8px; align-items: center;
+      flex-shrink: 0;
+      background: var(--surface);
+    }
+    .msg-input {
+      flex: 1; padding: 9px 14px;
+      border: 0.5px solid var(--border-strong);
+      border-radius: 22px;
+      font-size: 13px;
+      background: var(--surface2);
+      color: var(--text);
+      font-family: inherit;
+      outline: none;
+    }
+    .msg-input:focus { border-color: var(--green); }
+    .msg-input:disabled { opacity: 0.4; cursor: not-allowed; }
+    .send-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--green); border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: background 0.1s;
+    }
+    .send-btn:hover { background: var(--green-dark); }
+    .send-btn svg { width: 16px; height: 16px; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      font-size: 11px; color: var(--text3);
+      padding: 16px;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .app-shell { grid-template-columns: 1fr; height: auto; }
+      .sidebar { height: 160px; border-right: none; border-bottom: 0.5px solid var(--border); }
+      .chat-area { height: 480px; }
+      .flow-bar { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="#">
+    <div class="nav-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+    </div>
+    HealthBot
+  </a>
+  <span class="nav-tag">Hackathon prototype</span>
+</nav>
+
+<div class="page">
+
+  <div class="intro">
+    <h1>Overdue appointment reminder bot</h1>
+    <p>Simulates an AI-powered WhatsApp bot that reaches out to patients with overdue appointments, books slots, escalates to humans when needed, and handles unresponsive patients gracefully.</p>
+  </div>
+
+  <div class="flow-bar">
+    <div class="flow-step"><span class="flow-pill active">Patient sends msg</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><span class="flow-pill active">Webhook (Twilio)</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><span class="flow-pill active">AI generates reply</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><span class="flow-pill active">Reply via WhatsApp</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><span class="flow-pill warn">Escalate?</span></div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-step"><span class="flow-pill danger">Human agent</span></div>
+  </div>
+
+  <div class="app-shell">
+    <div class="sidebar">
+      <div class="sidebar-header">Patient queue</div>
+      <div class="patient-list" id="patientList"></div>
+    </div>
+
+    <div class="chat-area">
+      <div class="chat-header">
+        <div class="chat-header-info">
+          <div class="avatar" id="chatAvatar">—</div>
+          <div>
+            <div class="chat-name" id="chatName">Select a patient</div>
+            <div class="chat-sub" id="chatSub">Pick a patient from the queue to begin</div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button class="action-btn success" id="btnSchedule" onclick="triggerSchedule()" style="display:none">✓ Mark scheduled</button>
+          <button class="action-btn danger" id="btnEscalate" onclick="triggerEscalate()" style="display:none">⚠ Escalate</button>
+        </div>
+      </div>
+
+      <div class="escalated-banner" id="escalatedBanner">
+        ⚠ Escalated — a human agent has been notified and will take over this conversation.
+      </div>
+
+      <div class="messages" id="messages">
+        <div class="msg msg-system">← Select a patient to start a simulated conversation</div>
+      </div>
+
+      <div class="quick-replies" id="quickReplies"></div>
+
+      <div class="input-area">
+        <input class="msg-input" id="msgInput" placeholder="Select a patient first…" onkeydown="if(event.key==='Enter')sendMessage()" disabled />
+        <button class="send-btn" onclick="sendMessage()">
+          <svg viewBox="0 0 24 24" fill="white"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>Team Overdue Bot · AI Hackathon · Prototype only — not for clinical use</footer>
+
+<script>
+const ANTHROPIC_API_KEY = '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';
+
+const patients = [
+  {
+    id: 1, name: "Maria S.", initials: "MS", phone: "+91 98765 00001",
+    condition: "Hypertension follow-up", lastAppt: "3 weeks overdue", scenario: "cooperative",
+    systemPrompt: `You are a friendly WhatsApp reminder bot called "HealthBot" for a PHC (Primary Health Centre). Your job is to remind patients about overdue appointments. The patient is Maria S., whose hypertension follow-up was 3 weeks ago. Be warm, brief, and empathetic. Use simple language. After the patient agrees to visit, offer slots: Monday 10am, Tuesday 2pm, Thursday 11am. Once a slot is chosen, confirm it. Keep replies under 3 sentences. Never admit you are AI unless asked directly. If patient confirms a specific slot, end your message with [APPOINTMENT_CONFIRMED]. If patient is in danger or requests a human, end with [ESCALATE].`,
+    opening: "Hi Maria! This is HealthBot from City PHC 😊 Your hypertension follow-up is now 3 weeks overdue — it's really important for managing your blood pressure. Could we find a time for you to come in?"
+  },
+  {
+    id: 2, name: "Rajan K.", initials: "RK", phone: "+91 98765 00002",
+    condition: "Diabetes check", lastAppt: "5 weeks overdue", scenario: "resistant",
+    systemPrompt: `You are a friendly WhatsApp reminder bot called "HealthBot" for a PHC. The patient is Rajan K., overdue 5 weeks for a diabetes check. He tends to be dismissive or busy. Be patient but persistent — up to 3 gentle follow-ups. If he refuses firmly or shows distress, end with [ESCALATE]. If he agrees to a slot, end with [APPOINTMENT_CONFIRMED]. Keep replies very short, no jargon.`,
+    opening: "Hello Rajan! HealthBot here from City PHC. Your diabetes check-up is now 5 weeks overdue — keeping track of your blood sugar is really important. Can we schedule a quick visit soon? 🏥"
+  },
+  {
+    id: 3, name: "Priya T.", initials: "PT", phone: "+91 98765 00003",
+    condition: "Prenatal visit", lastAppt: "2 weeks overdue", scenario: "distressed",
+    systemPrompt: `You are a friendly WhatsApp reminder bot called "HealthBot" for a PHC. The patient is Priya T., overdue 2 weeks for her prenatal visit. She may be worried or stressed. Be very warm and reassuring. If she mentions concerning symptoms (bleeding, severe pain, reduced fetal movement, high fever), immediately end with [ESCALATE]. If she agrees to a slot (Monday 9am, Wednesday 11am, Friday 10am), confirm and end with [APPOINTMENT_CONFIRMED]. Keep replies short and kind.`,
+    opening: "Hi Priya! HealthBot here from City PHC 🤱 Hope you and baby are doing well! Your prenatal visit was due 2 weeks ago — shall we get you booked in for a check-up?"
+  }
+];
+
+let activePatient = null;
+const history = {};
+const status = {};
+const timers = {};
+
+patients.forEach(p => { history[p.id] = []; status[p.id] = 'pending'; });
+
+function renderPatientList() {
+  const list = document.getElementById('patientList');
+  list.innerHTML = '';
+  patients.forEach(p => {
+    const st = status[p.id];
+    const badgeClass = { escalated: 'badge-escalated', scheduled: 'badge-scheduled', timeout: 'badge-timeout', pending: 'badge-pending' }[st];
+    const badgeLabel = { escalated: 'Escalated', scheduled: 'Scheduled', timeout: 'Timed out', pending: 'Pending' }[st];
+    const div = document.createElement('div');
+    div.className = 'patient-item' + (activePatient && activePatient.id === p.id ? ' active' : '');
+    div.innerHTML = `<div class="patient-name">${p.name}</div><div class="patient-meta">${p.condition}</div><div class="patient-meta">${p.lastAppt}</div><span class="status-badge ${badgeClass}">${badgeLabel}</span>`;
+    div.onclick = () => selectPatient(p);
+    list.appendChild(div);
+  });
+}
+
+function selectPatient(p) {
+  activePatient = p;
+  renderPatientList();
+  document.getElementById('chatAvatar').textContent = p.initials;
+  document.getElementById('chatName').textContent = p.name;
+  document.getElementById('chatSub').textContent = p.condition + ' · ' + p.phone;
+
+  const st = status[p.id];
+  const msgInput = document.getElementById('msgInput');
+  const escalatedBanner = document.getElementById('escalatedBanner');
+  const btnE = document.getElementById('btnEscalate');
+  const btnS = document.getElementById('btnSchedule');
+
+  escalatedBanner.style.display = 'none';
+  btnE.style.display = st === 'pending' ? '' : 'none';
+  btnS.style.display = st === 'pending' ? '' : 'none';
+  msgInput.disabled = st !== 'pending';
+  msgInput.placeholder = st === 'pending' ? `Type as ${p.name}…` : 'Conversation ended';
+
+  if (st === 'escalated') escalatedBanner.style.display = 'flex';
+
+  const msgs = document.getElementById('messages');
+  msgs.innerHTML = '';
+
+  if (history[p.id].length === 0) {
+    addSystemMsg('Conversation started · AI sends opening message');
+    addBotMsg(p.opening, true);
+    history[p.id].push({ role: 'assistant', content: p.opening });
+    startTimeout(p);
+  } else {
+    history[p.id].forEach(m => {
+      if (m.role === 'assistant') addBotMsg(m.content, false);
+      else if (m.role === 'user') addPatientMsg(m.content);
+    });
+    if (st === 'escalated') addSystemMsg('⚠ Escalated to human agent');
+    if (st === 'scheduled') addSystemMsg('✓ Appointment confirmed — EMR updated');
+    if (st === 'timeout') addSystemMsg('⏱ Session timed out — reminder to call later set');
+  }
+
+  renderQuickReplies();
+  scrollBottom();
+}
+
+function addBotMsg(text) {
+  const msgs = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg msg-bot';
+  div.innerHTML = `<div class="msg-label">HealthBot</div>${text}<div class="msg-time">${getTime()}</div>`;
+  msgs.appendChild(div);
+  scrollBottom();
+}
+function addPatientMsg(text) {
+  const msgs = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg msg-patient';
+  div.innerHTML = `${text}<div class="msg-time">${getTime()}</div>`;
+  msgs.appendChild(div);
+  scrollBottom();
+}
+function addSystemMsg(text) {
+  const msgs = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg msg-system';
+  div.textContent = text;
+  msgs.appendChild(div);
+  scrollBottom();
+}
+function addTyping() {
+  const msgs = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'typing-indicator'; div.id = 'typing';
+  div.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+  msgs.appendChild(div); scrollBottom();
+}
+function removeTyping() { const t = document.getElementById('typing'); if (t) t.remove(); }
+function getTime() { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function scrollBottom() { const m = document.getElementById('messages'); setTimeout(() => m.scrollTop = m.scrollHeight, 60); }
+
+function renderQuickReplies() {
+  const qr = document.getElementById('quickReplies');
+  qr.innerHTML = '';
+  if (!activePatient || status[activePatient.id] !== 'pending') return;
+  const map = {
+    cooperative: ["Yes, I'll come in", "Monday 10am works", "Tuesday 2pm please", "I've been feeling okay"],
+    resistant: ["I'm too busy right now", "Maybe next week", "I feel fine, why bother?", "Okay, fine"],
+    distressed: ["I'm a bit worried", "I've had some pain", "Yes, I can come in", "What should I watch for?"]
+  };
+  (map[activePatient.scenario] || []).forEach(r => {
+    const btn = document.createElement('button');
+    btn.className = 'quick-reply'; btn.textContent = r;
+    btn.onclick = () => { document.getElementById('msgInput').value = r; sendMessage(); };
+    qr.appendChild(btn);
+  });
+}
+
+async function sendMessage() {
+  if (!activePatient || status[activePatient.id] !== 'pending') return;
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  clearTimeout(timers[activePatient.id]);
+
+  addPatientMsg(text);
+  history[activePatient.id].push({ role: 'user', content: text });
+  addTyping();
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 200,
+        system: activePatient.systemPrompt,
+        messages: history[activePatient.id]
+      })
+    });
+    const data = await res.json();
+    removeTyping();
+    let reply = (data.content || []).map(c => c.text || '').join('').trim();
+
+    if (reply.includes('[APPOINTMENT_CONFIRMED]')) {
+      reply = reply.replace('[APPOINTMENT_CONFIRMED]', '').trim();
+      addBotMsg(reply);
+      history[activePatient.id].push({ role: 'assistant', content: reply });
+      setTimeout(() => {
+        addSystemMsg('✓ Appointment confirmed — webhook sent to EMR');
+        setStatus(activePatient, 'scheduled');
+      }, 400);
+    } else if (reply.includes('[ESCALATE]')) {
+      reply = reply.replace('[ESCALATE]', '').trim();
+      addBotMsg(reply);
+      history[activePatient.id].push({ role: 'assistant', content: reply });
+      doEscalate();
+    } else {
+      addBotMsg(reply);
+      history[activePatient.id].push({ role: 'assistant', content: reply });
+      startTimeout(activePatient);
+    }
+  } catch (e) {
+    removeTyping();
+    addBotMsg('Sorry, I had trouble connecting. Please try again.');
+  }
+}
+
+function startTimeout(p) {
+  clearTimeout(timers[p.id]);
+  timers[p.id] = setTimeout(() => {
+    if (status[p.id] !== 'pending') return;
+    if (activePatient && activePatient.id === p.id) {
+      addBotMsg("It seems you've stepped away. No worries — I'll set a reminder for our team to give you a call. Take care! 😊");
+      addSystemMsg('⏱ Timed out after 60s — reminder to call later set');
+      history[p.id].push({ role: 'assistant', content: "It seems you've stepped away. No worries — I'll set a reminder for our team to give you a call. Take care! 😊" });
+    }
+    setStatus(p, 'timeout');
+  }, 60000);
+}
+
+function triggerEscalate() {
+  if (!activePatient || status[activePatient.id] !== 'pending') return;
+  doEscalate();
+}
+function doEscalate() {
+  clearTimeout(timers[activePatient.id]);
+  addBotMsg("I'm going to connect you with one of our health workers who can help you better. Someone will reach out to you shortly. 🙏");
+  history[activePatient.id].push({ role: 'assistant', content: "I'm going to connect you with one of our health workers who can help you better. Someone will reach out to you shortly. 🙏" });
+  setTimeout(() => {
+    addSystemMsg('⚠ Escalated — staff notified via Twilio alert');
+    document.getElementById('escalatedBanner').style.display = 'flex';
+    setStatus(activePatient, 'escalated');
+  }, 400);
+}
+function triggerSchedule() {
+  if (!activePatient || status[activePatient.id] !== 'pending') return;
+  clearTimeout(timers[activePatient.id]);
+  addSystemMsg('✓ Manually marked as scheduled — EMR updated');
+  setStatus(activePatient, 'scheduled');
+}
+function setStatus(p, st) {
+  status[p.id] = st;
+  if (activePatient && activePatient.id === p.id) {
+    document.getElementById('btnEscalate').style.display = 'none';
+    document.getElementById('btnSchedule').style.display = 'none';
+    document.getElementById('msgInput').disabled = true;
+    document.getElementById('msgInput').placeholder = 'Conversation ended';
+    document.getElementById('quickReplies').innerHTML = '';
+  }
+  renderPatientList();
+}
+
+renderPatientList();
+</script>
+</body>
+</html>
